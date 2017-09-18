@@ -1,12 +1,10 @@
 import React, { Component } from 'react';
 import { StyleSheet, css } from 'aphrodite';
 import PropTypes from 'prop-types';
-import LevelDisplay from './animated_level';
 
 const styles = StyleSheet.create({
   main: {
     width: '25%',
-    display: 'absolute',
     fontWeight: 'bold',
     borderRadius: '8px',
     padding: '7px',
@@ -19,18 +17,21 @@ const styles = StyleSheet.create({
 
       boxShadow: '0 4px 4px 1px #ddd',
     },
-  },
-  start: {
-    color: '#56d72b',
-    border: '2px solid #56d72b',
+    ':focus': {
+      outline: '0',
+    },
   },
   easy: {
-    color: '#fdf200',
-    border: '2px solid #fdf200',
+    color: '#0f80ff',
+    border: '2px solid #0f80ff',
   },
-  hard: {
+  medium: {
     color: '#fc0107',
     border: '2px solid #fc0107',
+  },
+  hard: {
+    color: '#800002',
+    border: '2px solid #800002',
   },
   reset: {
     color: '#fc2125',
@@ -74,6 +75,7 @@ class ControlPanel extends Component {
       showAll: true,
     };
   }
+
   messUpIconSet() {
     const keys = ['one', 'two', 'three'];
     const amount = this.props.playerMessups;
@@ -89,55 +91,46 @@ class ControlPanel extends Component {
       </span>
     ));
   }
-  animateOut() {
-    this.setState({  })
-    setTimeout(() => { this.setState({ showAll: false }); }, 200);
-  }
   handleStart(difficulty) {
     this.props.start(difficulty);
   }
   render() {
     const isReset = this.props.isReset;
+    const showReset = isReset || this.props.inProgress ? 'reset' : 'medium';
     return (
       <div className={css(styles.spacer)}>
-        <LevelDisplay
-          isReset={this.props.isReset}
-          playerMessups={this.props.playerMessups}
-          level={this.props.level}
-          isPlayerTurn={this.props.isPlayerTurn}
-          inProgress={this.props.inProgress}
-        />
-        { !this.props.inProgress &&
-          <span className={css(styles.statusSpacer)}>
-            <span className={css(styles.statusBar)}>
-              { !isReset &&
-                <span
-                  className={css(styles.main, styles.easy)}
-                  onClick={() => this.handleStart(0)}
-                  role="button"
-                  tabIndex="0"
-                >
-                  Easy
-                </span> }
+        <span className={css(styles.statusSpacer)}>
+          <span className={css(styles.statusBar)}>
+            { (!this.props.inProgress && !isReset) &&
               <span
-                className={css(styles.main, styles[(!isReset ? 'start' : 'reset')])}
-                onClick={() => this.handleStart(1)}
+                className={css(styles.main, styles.easy)}
+                onClick={() => this.handleStart('easy')}
                 role="button"
                 tabIndex="0"
               >
-                {isReset ? 'Reset' : 'Medium'}
+                Normal
               </span>
-              { !isReset &&
-                <span
-                  className={css(styles.main, styles.hard)}
-                  onClick={() => this.handleStart(2)}
-                  role="button"
-                  tabIndex="0"
-                >
-                  Hard
-                </span> }
+            }
+            <span
+              className={css(styles.main, styles[(showReset)])}
+              onClick={() => this.handleStart(showReset)}
+              role="button"
+              tabIndex="0"
+            >
+              {showReset === 'reset' ? 'Reset' : 'Strict'}
             </span>
-          </span> }
+            { (!this.props.inProgress && !isReset) &&
+              <span
+                className={css(styles.main, styles.hard)}
+                onClick={() => this.handleStart('hard')}
+                role="button"
+                tabIndex="0"
+              >
+                Impossible
+              </span>
+            }
+          </span>
+        </span>
       </div>
     );
   }
@@ -146,8 +139,6 @@ ControlPanel.propTypes = {
   start: PropTypes.func.isRequired,
   isReset: PropTypes.bool.isRequired,
   playerMessups: PropTypes.number.isRequired,
-  level: PropTypes.number.isRequired,
-  isPlayerTurn: PropTypes.bool.isRequired,
   inProgress: PropTypes.bool.isRequired,
 };
 export default ControlPanel;

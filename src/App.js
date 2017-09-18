@@ -1,8 +1,9 @@
 import React, { Component } from 'react';
 import { StyleSheet, css } from 'aphrodite';
-import MainButton from './Components/button_main';
-import ControlPanel from './Components/panel_control';
 import AudioGenerator from './Utilities/gen_audio';
+import ButtonFrame from './Components/button_frame';
+import ControlPanel from './Components/panel_control';
+
 // import logo from './logo.svg';
 // import './App.css';
 
@@ -15,46 +16,53 @@ const styles = StyleSheet.create({
     margin: '10px',
     textAlign: 'center',
   },
-  buttonsFrame: {
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    width: '520px',
-    transform:
-    'matrix3d(1,0,0.00,0,0.00,0.71,0.71,-0.0007,0,-0.71,0.71,0,0,0,0,1)',
-    '@media (max-width: 550px)': {
-      width: '360px',
-    },
-    minWidth: '360px',
-  },
 });
 
 class App extends Component {
   constructor() {
     super();
-    this.audioContext = new (window.AudioContext || window.AudioContext)();
+    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
     this.state = {
       inProgress: false,
-      isTimelinePlaying: false,
       level: 2,
       isPlayerTurn: false,
       playerAt: 0,
       playerMessups: 0,
-      timeline: Array(100).fill(0).map(() => Math.floor(Math.random() * 4)),
-      timingsSet: 'default',
-      timings: {
-        default: Array(100).fill({}).map((v, i) => ({
-          upto: i + 3, time: 600 - (i * i),
-        })),
+      timeline: [...Array(100).fill(0).map(() => Math.floor(Math.random() * 4))],
+      timingSet: 'medium',
+      trial: {
+        easy: {
+          track: [...Array(20).fill(0).map((v, i) => (
+            { upto: (i * 3), time: 750 - Math.floor(Math.log(1 + (i ** 100))) }
+          ))],
+          redos: 3,
+          step: 1,
+        },
+        medium: {
+          track: Array(100).fill({}).map((v, i) => (
+            { upto: (i * 3), time: 750 - Math.floor(Math.log(1 + (i ** 100))) }
+          )),
+          redos: 1,
+          step: 1,
+        },
+        hard: {
+          track: Array(100).fill({}).map((v, i) => (
+            { upto: (i * 3), time: 600 - Math.floor(Math.log(1 + (i ** 150))) }
+          )),
+          redos: 1,
+          step: 3,
+        },
       },
+      currTrial: {},
       delay: 600,
       mainButtons: [
-        { class: 'topLeft', highlight: false, freq: 110.000 },
-        { class: 'topRight', highlight: false, freq: 130.813 },
-        { class: 'botLeft', highlight: false, freq: 164.814 },
-        { class: 'botRight', highlight: false, freq: 220.000 },
+        { class: 'topLeft', isActive: 0, freq: 250 },
+        { class: 'topRight', isActive: 0, freq: 300 },
+        { class: 'botLeft', isActive: 0, freq: 400 },
+        { class: 'botRight', isActive: 0, freq: 500 },
       ],
+      houseMouseUp: true,
+      queue: 0,
       sound: {
         roundOver: new AudioGenerator(this.audioContext),
         start: new AudioGenerator(this.audioContext),
@@ -76,105 +84,124 @@ class App extends Component {
       this.state.sound[key].setFrequency(freqs[key])
     ));
   }
-  execTimelineInterval(index, level, toNext, isInit = true) {
-    if (this.state.playerMessups === 3) {
+  execTimelineInterval(index, level, isNotRepeat, isInit = true) {
+    if (this.state.playerMessups === this.state.currTrial.redos
+      || !this.state.inProgress) {
       return;
     }
-    if (index === 0 && !isInit) {
-      const getDelay = this.nextDelay();
-      this.setState({ isTimelinePlaying: true, delay: getDelay }, () => {
-        this.execTimelineInterval(index, level, toNext, false);
+    if (index === 0 && isInit && isNotRepeat) {
+      this.setState({ delay: this.nextDelay() }, () => {
+        this.execTimelineInterval(index, level, isNotRepeat, false);
       });
-      return;
-    }
-    if (index <= level) {
+    } else if (index <= level) {
       const delay = this.state.delay;
-      const buttonTodo = this.state.timeline[index];
+      const btn = this.state.timeline[index];
       setTimeout(() => {
-        this.doHighlight(buttonTodo, delay, true);
-        const ind = index + 1;
-        this.execTimelineInterval(ind, level, toNext);
+        this.activateBtn(btn, delay);
+        const nextPress = index + 1;
+        this.execTimelineInterval(nextPress, level, isNotRepeat);
       }, delay);
     } else {
       let at = this.state.level;
-      at += toNext ? 1 : 0;
-      console.log(at, this.state.level);
-      this.setState({ level: at, isPlayerTurn: true, isTimelinePlaying: false });
+      at += isNotRepeat ? this.state.currTrial.step : 0;
+      this.setState({ level: at, isPlayerTurn: true });
     }
+    // has reached number of presses in level
   }
-  doHighlight(index, delay, active) {
-    const mainButtons = this.state.mainButtons.slice();
-    mainButtons[index].highlight = active;
-    console.log(index, mainButtons[index].highlight);
-    this.setState({ mainButtons }, () => {
-      if (active) {
-      // follow up toggle off;
-        setTimeout(() => {
-          this.doHighlight(index, false, false);
-        }, delay * 0.25);
-      }
-    });
+  nextDelay(i = this.state.level) {
+    let ind = 0;
+    while (this.state.currTrial.track[ind].upto < i) {
+      ind += 1;
+    }
+    return this.state.currTrial.track[ind].time;
+    // return this.state.currTrial.track.reduce((acc, v) => {
+    //   if (acc) { return acc; }
+    //   if (v.upto > i) { return v.time; }
+    //   return false;
+    // }, false);
   }
-  startGame(difficulty) {
+  startGame(trialSelect) {
+    if (trialSelect === 'reset') {
+      this.setState(this.baseState);
+      return;
+    }
+    if (trialSelect) {
+      const timeline = Array(100).fill(0).map(() => (
+        Math.floor(Math.random() * 4)
+      ));
+      const currTrial = this.state.trial[trialSelect];
+      this.setState({ timeline, trialSelect, currTrial }, () => {
+        this.startGame(false);
+      });
+      return;
+    }
     if (this.state.inProgress) {
       return;
     }
-    if (this.state.playerMessups === 3) {
+    if (this.state.playerMessups === this.state.currTrial.redos) {
       this.setState(this.baseState);
       return;
     }
     this.state.sound.start.sweep(1, 75);
     this.state.sound.start.sweep(100, 75);
-    this.setState({ inProgress: true });
-    const onTimelineComplete = () => {
+    this.setState({ inProgress: true }, () => {
       setTimeout(() => {
         this.execTimelineInterval(0, this.state.level, true);
       }, 1000);
-    };
-    if (this.state.timingSet === 'default') {
-      const timeline = Array(100).fill(0).map(() => (
-        Math.floor(Math.random() * 4)
-      ));
-      this.setState({ timeline }, onTimelineComplete);
-    } else {
-      onTimelineComplete();
-    }
+    });
   }
-  nextDelay(i = this.state.level) {
-    const timeOuts = this.state.timings[this.state.timingsSet];
-    return timeOuts.reduce((acc, v) => {
-      if (acc) { return acc; }
-      if (v.upto > i) { return v.time; }
-      return false;
-    }, false);
+  activateBtn(index, delay, autoDeactivate = true) {
+    if (!this.state.inProgress) { return; }
+    const mainButtons = [...this.state.mainButtons];
+    if (mainButtons[index].isActive) { return; }
+    mainButtons[index].isActive = autoDeactivate ? 2 : 1;
+    this.setState({ mainButtons }, () => {
+      if (autoDeactivate) {
+        // follow up toggle off;
+        setTimeout(() => {
+          this.deactivateBtn(index);
+        }, delay * 0.25);
+      }
+    });
   }
-  mainButtonOnClick(i) {
-    if (this.state.playerMessups === 3 || !this.state.isPlayerTurn) { return; }
-    const playerAt = this.state.playerAt;
-    if (i === this.state.timeline[playerAt] && !this.state.isTimelinePlaying) {
-      const nextDelay = this.state.delay;
-      this.doHighlight(i, nextDelay, true);
-      this.setState({ playerAt: playerAt + 1 }, () => {
+  deactivateBtn(index) {
+    const mainButtons = [...this.state.mainButtons];
+    mainButtons[index].isActive = 0;
+    this.setState({ mainButtons });
+    if (this.state.queue > 0) {
+      const playerAt = this.state.playerAt + 1;
+      const queue = this.state.queue - 1;
+      this.setState({ playerAt, queue }, () => {
         // player finished level
-        if (this.state.playerAt === this.state.level) {
+        const currPos = (this.state.playerAt + (this.state.currTrial.step - 1));
+        if (currPos === this.state.level) {
           this.setState({ playerAt: 0, isPlayerTurn: false, playerMessups: 0 }, () => {
             this.execTimelineInterval(0, this.state.level, true);
           });
         }
       });
-      // messed up
+    }
+  }
+  mainButtonOnClick(i) {
+    if (this.state.playerMessups === this.state.currTrial.redos
+      || (!this.state.isPlayerTurn && this.state.inProgress)) { return; }
+    if (i === this.state.timeline[this.state.playerAt]
+      || !this.state.inProgress) {
+      const nextDelay = this.state.delay || 100;
+      this.setState({ queue: this.state.queue + 1 }, () => {
+        this.activateBtn(i, nextDelay, false);
+      });
     } else {
+      // player has messed up
       this.setState(_ => ({
         playerMessups: _.playerMessups + 1,
         playerAt: 0,
         isPlayerTurn: false,
       }), () => {
-        if (this.state.playerMessups < 3) {
+        if (this.state.playerMessups < this.state.currTrial.redos) {
           const swUp = (25 * this.state.playerMessups);
           this.state.sound.bad.sweep(-200 + swUp, 10 + swUp);
-          if (!this.state.isTimelinePlaying) {
-            this.execTimelineInterval(0, this.state.level - 1, false);
-          }
+          this.execTimelineInterval(0, this.state.level - this.state.currTrial.step, false);
         } else {
           // game over
           this.setState({ inProgress: false });
@@ -183,32 +210,37 @@ class App extends Component {
       });
     }
   }
+  hasMouseUp() {
+    this.setState({ hasMouseUp: true });
+    console.log('MOUSEUP YO');
+  }
   render() {
     const isRightButton = this.state.timeline[this.state.playerAt];
     return (
       <div className={css(styles.app)}>
         <div className={css(styles.buttonsFrame)}>
-          {this.state.mainButtons.map((v, i) => (
-            <MainButton
-              key={v.class}
-              cornerClass={v.class}
-              doHighlight={v.highlight}
-              freq={v.freq}
-              onClick={() => this.mainButtonOnClick(i)}
-              index={i}
-              audioContext={() => this.audioContext}
-              isRightButton={isRightButton === i || !this.state.inProgress}
-              isPlayerTurn={this.state.isPlayerTurn}
-            />
-          ))}
+          <ButtonFrame
+            mainButtons={() => this.state.mainButtons}
+            onClick={i => this.mainButtonOnClick(i)}
+            onMouseUp={i => this.deactivateBtn(i)}
+            audioContext={() => this.audioContext}
+            isRightButton={isRightButton}
+            isPlayerTurn={this.state.isPlayerTurn}
+            inProgress={this.state.inProgress}
+            isReset={this.state.playerMessups === this.state.currTrial.redos}
+            playerMessups={this.state.playerMessups}
+            level={this.state.level}
+            step={this.state.currTrial.step || 1}
+          />
         </div>
         <ControlPanel
-          start={() => this.startGame()}
-          isReset={this.state.playerMessups === 3}
+          start={v => this.startGame(v)}
+          isReset={this.state.playerMessups === this.state.currTrial.redos}
           playerMessups={this.state.playerMessups}
           level={this.state.level}
           isPlayerTurn={this.state.isPlayerTurn}
           inProgress={this.state.inProgress}
+          step={this.state.currTrial.step || 1}
         />
       </div>
     );

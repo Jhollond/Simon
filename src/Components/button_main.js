@@ -15,25 +15,28 @@ const styles = StyleSheet.create({
       width: '160px',
       height: '160px',
     },
+    ':focus': {
+      outline: '0',
+    },
   },
   topLeft: {
     zIndex: '1',
-    borderRadius: '75% 0 25% 0',
+    borderRadius: '100% 0 25% 0',
     background: '#02be04',
   },
   topRight: {
     zIndex: '1',
-    borderRadius: '0 75% 0 25%',
+    borderRadius: '0 100% 0 25%',
     background: '#c50b09',
   },
   botLeft: {
     zIndex: '2',
-    borderRadius: '0 25% 0 75%',
+    borderRadius: '0 25% 0 100%',
     background: '#b7ac07',
   },
   botRight: {
     zIndex: '2',
-    borderRadius: '25% 0 75% 0',
+    borderRadius: '25% 0 100% 0',
     background: '#0748bc',
   },
   topLeftDown: {
@@ -58,8 +61,13 @@ class MainButton extends Component {
     super();
     this.state = {
       isPressed: false,
+      clickFlag: 0,
       audio: {},
     };
+    this.handleMouseUp = this.handleMouseUp.bind(this);
+  }
+  componentWillMount() {
+    document.addEventListener('mouseup', this.handleMouseUp, false);
   }
   componentDidMount() {
     this.mountAudioGenerator();
@@ -69,27 +77,37 @@ class MainButton extends Component {
       this.state.audio.setFrequency(this.props.freq);
     });
   }
-  handleClick() {
-    if (this.props.isRightButton && this.props.isPlayerTurn) {
-      this.state.audio.play(100);
+  handleMouseDown() {
+    if (this.props.canGo) {
+      this.state.audio.start();
+      this.setState({ isPressed: true, clickFlag: performance.now() });
     }
     this.props.onClick();
   }
-  animateButton() {
-    this.setState({ isPressed: true }, () => {
-      setTimeout(() => { this.setState({ isPressed: false }); }, 50);
-    });
+  handleMouseUp() {
+    const deactivate = () => {
+      this.props.onMouseUp();
+      this.state.audio.stop();
+    };
+    if (this.state.isPressed) {
+      if (performance.now() - this.state.clickFlag > 90) {
+        deactivate();
+      } else {
+        setTimeout(deactivate, 90);
+      }
+    }
   }
   render() {
     const cornerClass = styles[this.props.cornerClass];
-    const highlightClass = this.props.doHighlight ? styles.highlight : '';
-    const toAnimate = this.props.doHighlight ? styles[`${this.props.cornerClass}Down`] : '';
-    if (this.props.doHighlight) { this.state.audio.play(100); }
+    const highlightClass = this.props.isActive ? styles.isActive : '';
+    const toAnimate = this.props.isActive ? styles[`${this.props.cornerClass}Down`] : '';
+    if (this.props.isActive === 2) { this.state.audio.play(100); }
     return (
       <div
+        ref={(e) => { this.btnRef = e; }}
         role="button"
-        tabIndex={this.props.index + 1}
-        onMouseDown={() => this.handleClick()}
+        tabIndex={this.props.cornerClass}
+        onMouseDown={() => this.handleMouseDown()}
         className={css(styles.buttonMain, cornerClass, highlightClass, toAnimate)}
       />
     );
@@ -97,12 +115,11 @@ class MainButton extends Component {
 }
 MainButton.propTypes = {
   cornerClass: PropTypes.string.isRequired,
-  doHighlight: PropTypes.bool.isRequired,
+  isActive: PropTypes.number.isRequired,
   freq: PropTypes.number.isRequired,
   onClick: PropTypes.func.isRequired,
-  index: PropTypes.number.isRequired,
   audioContext: PropTypes.func.isRequired,
-  isRightButton: PropTypes.bool.isRequired,
-  isPlayerTurn: PropTypes.bool.isRequired,
+  canGo: PropTypes.bool.isRequired,
+  onMouseUp: PropTypes.func.isRequired,
 };
 export default MainButton;
